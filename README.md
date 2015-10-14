@@ -14,3 +14,4 @@ To use AeroView, you will need the following setup:
 2) There is a column in sets for record count, the method being used is infoMany(sets/NAMESPACE) - there is a replication fator config, but no guarantee that the user will put all ip's in the config file for a cluster, which will give incorrect counts. Uncomment this feature only if you are listing all nodes in your aerospike cluster in the config.
 
 
+![AeroView Screenshot](https://github.com/cpmaynard/AeroView/blob/master/screenshot.png "AeroView Screenshot")
