@@ -1,9 +1,0 @@
-2015-10-20 16:53:23 [INFO] Auth Token: 2ac205cd-43a4-44ce-bc4c-263ae32de62f
-2015-10-20 16:53:23 [INFO] MATCHER: <MATCH>
-2015-10-20 16:53:23 [INFO] Ignore : <IGNORE>
-2015-10-20 16:53:23 [INFO] Checking OS....
-2015-10-20 16:53:23 [INFO] Getting OS name...
-2015-10-20 16:53:23 [INFO] OS Name in lower case: darwin
-2015-10-20 16:53:23 [INFO] Operating system is Mac OS.
-2015-10-20 16:53:23 [INFO] Found java executable in PATH
-2015-10-20 16:53:23 [INFO] Loggly Live Tail Options:  -ts https://tail.loggly.com:443  -op start  -at 2ac205cd-43a4-44ce-bc4c-263ae32de62f  -m <MATCH>  -i <IGNORE>  -bc 44 -tc 32 -s
