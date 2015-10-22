@@ -27,7 +27,7 @@ $qs = $aeroview->buildQueryString();
     <meta name="description" content="">
     <meta name="author" content="">
 
-    <title>AeroView - An AreoSpike GUI</title>
+    <title>AeroView - AeroSpike GUI</title>
 
     <!-- Bootstrap Core CSS -->
     <link href="css/bootstrap.min.css" rel="stylesheet">

@@ -1,0 +1,294 @@
+#!/bin/bash
+
+APP_MIN_MEM=125m
+APP_MAX_MEM=500m
+JDK_EXIST=false
+JRE_FILENAME=
+JRE_INSTALL_DIR=
+BASE_URL_8=http://download.oracle.com/otn-pub/java/jdk/8u60-b27/jdk-8u60
+JDK_VERSION=${BASE_URL_8: -8}
+LTC_HOME="$( cd "$( dirname "$0" )" && pwd )"
+PLATFORM="-linux-x64.tar.gz"
+JAVA=
+LINUX_DIST=
+LINUX_DIST_IN_LOWER_CASE=
+OSNAME=
+LOG_DIR=log
+LOG_FILE=livetail.log
+LOG_FILE_PATH=$LTC_HOME/$LOG_DIR/$LOG_FILE
+
+MATCHER=""
+IGNORE=""
+AUTH_TOKEN=""
+TEXT_COLOUR="32"
+BG_COLOUR="44"
+LTC_VERSION=false
+HOST_PORT="https://tail.loggly.com:443"
+
+JAVA_OPTS="$JAVA_OPTS -Xms${APP_MIN_MEM}" JAVA_OPTS="$JAVA_OPTS -Xmx${APP_MAX_MEM}"
+
+
+
+installJRE() {
+    #declare -a PLATFORMS=("-windows-x64.exe" "-linux-x64.tar.gz" "-docs-all.zip" "-windows-i586.exe" "-linux-i586.tar.gz")
+    declare -a PLATFORMS[0]=$PLATFORM
+    logInfo "PLATFORM: ${PLATFORMS[1]}"
+    for platform in "${PLATFORMS[@]}"
+    do
+        wget -c -O "$JDK_VERSION$platform" --no-check-certificate --no-cookies --header "Cookie: oraclelicense=accept-securebackup-cookie" "${BASE_URL_8}${platform}"
+        if [ $? -ne 0 ]; then
+           logError "wget doesn't exist trying with curl"
+           curl -L -O -H "Cookie: oraclelicense=accept-securebackup-cookie" -k "${BASE_URL_8}${platform}"
+        fi
+        ### curl -L -O -H "Cookie: oraclelicense=accept-securebackup-cookie" -k "${BASE_URL_8}${platform}"
+    done
+    logInfo "JDK is downloaded in :  $LTC_HOME  Please run
+    1. tar -xvzf $JDK_VERSION$PLATFORM or execute dmg file for mac to install it on the machine.
+    2. Set JAVA_HOME by doing export JAVA_HOME=$LTC_HOME/$JDK_VERSION/jre before executing livetail."
+    exit 0
+}
+
+#extractJRE(){
+#     echo "$JDK_VERSION$PLATFORM"
+#     tar -xzf $LTC_HOME/$JDK_VERSION$PLATFORM
+#     JRE_INSTALL_DIR="$( tar -tzf jdk-8u60-linux-x64.tar.gz | cut -d'/' -f1 | tail -n 1 )"
+#}
+
+#setJREPath(){
+#    JRE_INSTALL_DIR="$( tar -tzf $LTC_HOME/$JDK_VERSION$PLATFORM | cut -d'/' -f1 | tail -n 1 )"
+#    JAVA=$LTC_HOME/$JRE_INSTALL_DIR$DEFAULT_JAVA_PATH
+#}
+
+
+
+checkAndInstallJRE() {
+
+    if type -p java; then
+        logInfo "Found java executable in PATH"
+        JAVA=java
+    elif [[ -n "$JAVA_HOME" ]] && [[ -x "$JAVA_HOME/bin/java" ]];  then
+        logInfo "Found java executable in JAVA_HOME"
+        JAVA="$JAVA_HOME/bin/java"
+    else
+        logInfo "Java not found."
+        if ls ${LTC_HOME}/jdk* 1> /dev/null 2>&1; then
+            logInfo "JDK is already installed skipping"
+            JDK_EXIST=true
+            if [ $JAVA == "" ]; then
+                logError "Set JAVA_HOME by doing export JAVA_HOME=$LTC_HOME/$JDK_VERSION/jre before executing livetail."
+                exit
+            fi
+        fi
+        if [ "$JDK_EXIST" == "false" ]; then
+            logWarn "No java found!!. Install Java before to run loggly live tail "
+            while true; do
+                read -p "Would you like to install java? (yes/no)" yn
+                case $yn in
+                    [Yy]* )
+                    installJRE
+                    break;;
+                    [Nn]* )
+                    exit 1
+                    ;;
+                    * ) echo "Please answer yes or no.";;
+                esac
+            done
+        fi
+    fi
+}
+
+checkOS()
+{
+    logInfo "Checking OS...."
+	getOs
+
+	LINUX_DIST_IN_LOWER_CASE=$(echo $LINUX_DIST | tr "[:upper:]" "[:lower:]")
+
+    logInfo "OS Name in lower case: $LINUX_DIST_IN_LOWER_CASE"
+
+	case "$LINUX_DIST_IN_LOWER_CASE" in
+		*"ubuntu"* )
+		logInfo "Operating system is Ubuntu."
+		PLATFORM="-linux-x64.tar.gz"
+		;;
+		*"redhat"* )
+		logInfo "Operating system is Red Hat."
+		PLATFORM="-linux-x64.tar.gz"
+		;;
+		*"centos"* )
+		logInfo "Operating system is CentOS."
+		PLATFORM="-linux-x64.tar.gz"
+		;;
+		*"debian"* )
+		logInfo "Operating system is Debian."
+		PLATFORM="-linux-x64.tar.gz"
+		;;
+		*"amazon"* )
+		logInfo "Operating system is Amazon AMI."
+		PLATFORM="-linux-x64.tar.gz"
+		;;
+		*"darwin"* )
+		logInfo "Operating system is Mac OS."
+		PLATFORM="-macosx-x64.dmg"
+		;;
+		* )
+		 logWarn "The linux distribution '$LINUX_DIST' has not been previously tested with Loggly."
+		if [ "$SUPPRESS_PROMPT" == "false" ]; then
+			while true; do
+				read -p "Would you like to continue anyway? (yes/no)" yn
+				case $yn in
+					[Yy]* )
+					break;;
+					[Nn]* )
+					exit 1
+					;;
+					* ) echo "Please answer yes or no.";;
+				esac
+			done
+		fi
+		;;
+	esac
+}
+
+
+getOs() {
+    logInfo "Getting OS name..."
+	# Determine OS platform
+	UNAME=$(uname | tr "[:upper:]" "[:lower:]")
+	# If Linux, try to determine specific distribution
+	if [ "$UNAME" == "linux" ]; then
+		# If available, use LSB to identify distribution
+		if [ -f /etc/lsb-release -o -d /etc/lsb-release.d ]; then
+			LINUX_DIST=$(lsb_release -i | cut -d: -f2 | sed s/'^\t'//)
+		# If system-release is available, then try to identify the name
+		elif [ -f /etc/system-release ]; then
+			LINUX_DIST=$(cat /etc/system-release  | cut -f 1 -d  " ")
+		# Otherwise, use release info file
+		else
+			LINUX_DIST=$(ls -d /etc/[A-Za-z]*[_-][rv]e[lr]* | grep -v "lsb" | cut -d'/' -f3 | cut -d'-' -f1 | cut -d'_' -f1)
+		fi
+	fi
+	# For everything else (or if above failed), just use generic identifier
+	if [ "$LINUX_DIST" == "" ]; then
+		LINUX_DIST=$(uname)
+	fi
+}
+
+buildLL_params() {
+  #Default options for now
+  if [ "$LTC_VERSION" == "true" ]; then
+    LL_OPTS=" -v"
+    #These two are required by server so setting dumy token.
+    AUTH_TOKEN="dummytoken"
+    MATCHER="dummymatcher"
+  fi
+  LL_OPTS="$LL_OPTS -ts $HOST_PORT "
+  LL_OPTS="$LL_OPTS -op start "
+  LL_OPTS="$LL_OPTS -at $AUTH_TOKEN "
+  LL_OPTS="$LL_OPTS -m $MATCHER "
+  LL_OPTS="$LL_OPTS -i $IGNORE "
+  LL_OPTS="$LL_OPTS -bc $BG_COLOUR -tc $TEXT_COLOUR -s"
+  logInfo "Loggly Live Tail Options: $LL_OPTS"
+}
+
+
+logMsg() {
+  local level="$1"
+  local msg="$2"
+  local ts=`date +"%F %T"`
+  if [ "$LOG_FILE_PATH" == "" ]; then
+      echo "$ts [$level] $msg"
+  elif [ -f $LOG_FILE_PATH ]; then
+      echo "$ts [$level] $msg" >> $LOG_FILE_PATH
+  else
+        if [ ! -d $LOG_DIR ]; then
+            mkdir -p $LTC_HOME/$LOG_DIR
+        fi
+        touch $LOG_FILE_PATH
+        if [ ! -f $LOG_FILE_PATH ]; then
+            echo "ERORR Not able to create Log file"
+        else
+            echo "$ts [$level] $msg" >> $LOG_FILE_PATH
+        fi
+   fi
+}
+
+logError() {
+  logMsg "ERROR" "$1"
+}
+
+logInfo() {
+  logMsg "INFO" "$1"
+}
+
+logWarn() {
+  logMsg "WARN" "$1"
+}
+
+start_livetail() {
+  buildLL_params
+#  logInfo "Executing following to start LTC:  $JAVA $JAVA_OPTS -jar tailclient-1.0-SNAPSHOT-jar-with-dependencies.jar $LL_OPTS"
+  $JAVA $JAVA_OPTS -jar tailclient-1.0.0-jar-with-dependencies.jar $LL_OPTS
+}
+usage() {
+  echo "Usage:
+       -v print product version and exit
+       -m [term to match from live stream. It can be literal or regex]
+       -i [term to ignore. It can be literal or regex.]
+       -at [Auth token]"
+}
+
+
+if [ $# -lt 1 ]; then
+  usage
+  exit 1
+fi
+
+while [ "$1" != "" ]; do
+  case $1 in
+    -m | --matcher ) shift
+      MATCHER=$1
+      logInfo "MATCHER: $MATCHER"
+      ;;
+    -i | --ignore ) shift
+      IGNORE=$1
+      logInfo "Ignore : $IGNORE"
+      ;;
+    -at | --authtoken ) shift
+      AUTH_TOKEN=$1
+      logInfo "Auth Token: $AUTH_TOKEN"
+      ;;
+    -bc | --bgcolour ) shift
+      BG_COLOUR=$1
+      logInfo "BG Colour: " + $BG_COLOUR
+      ;;
+    -tc | --textColour ) shift
+      TEXT_COLOUR=$1
+      logInfo "Text Colour: " + $TEXT_COLOUR
+      ;;
+    -v | --version ) shift
+      LTC_VERSION=true
+      ;;
+    -hp | --hostport ) shift
+      HOST_PORT=$1
+      echo "Host port : $HOST_PORT"
+      ;;
+    *) usage
+     exit
+     ;;
+  esac
+  shift
+done
+
+#start tail client.
+
+checkOS
+checkAndInstallJRE
+
+if [ $LTC_VERSION == "false" ]; then
+  echo "Starting Live Tail"
+fi
+
+start_livetail
+
+
